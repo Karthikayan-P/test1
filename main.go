@@ -24,6 +24,7 @@ type cust struct {
 	PasswordHash string    `json:"password_hash,omitempty"`
 	CreatedBy    time.Time `json:"created_by,omitempty"`
 	Active       int       `json:"active,omitempty"`
+	updateat     time.Time `json:"update_at,omitempty"`
 }
 
 const (
@@ -56,7 +57,8 @@ func main() {
 		cust_phn BIGINT,
 		password_hash VARCHAR(255),
 		created_by DATETIME,
-		active INT DEFAULT 1
+		active INT DEFAULT 1,
+		update_at DATETIME
 	);`
 
 	_, err = db.Exec(createTable)
@@ -110,8 +112,10 @@ func registerHandler(w http.ResponseWriter, r *http.Request, db *sql.DB, signing
 
 	c.Active = 1
 
-	insertQuery := `INSERT INTO CUSTOMER (cust_name, cust_mail, cust_addr, cust_phn,password_hash,created_by,active) VALUES (?, ?, ?, ?, ?, ?, ?);`
-	result, err := db.Exec(insertQuery, c.CUST_NAME, c.CUST_MAIL, c.CUST_ADDR, c.CUST_PHN, c.PasswordHash, c.CreatedBy, c.Active)
+	c.updateat = time.Now()
+
+	insertQuery := `INSERT INTO CUSTOMER (cust_name, cust_mail, cust_addr, cust_phn,password_hash,created_by,active,update_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?);`
+	result, err := db.Exec(insertQuery, c.CUST_NAME, c.CUST_MAIL, c.CUST_ADDR, c.CUST_PHN, c.PasswordHash, c.CreatedBy, c.Active, c.updateat)
 	if err != nil {
 		http.Error(w, internalServerError, http.StatusInternalServerError)
 		fmt.Println("Database Error:", err)
@@ -282,9 +286,9 @@ func deleteHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
-
-	updateQuery := `UPDATE CUSTOMER SET active = 0 WHERE cust_mail = ?;`
-	result, err := db.Exec(updateQuery, deleteData.CUST_MAIL)
+	updatedAt := time.Now()
+	updateQuery := `UPDATE CUSTOMER SET active = 0, update_at = ? WHERE cust_mail = ?;`
+	result, err := db.Exec(updateQuery, updatedAt, deleteData.CUST_MAIL)
 	if err != nil {
 		http.Error(w, internalServerError, http.StatusInternalServerError)
 		fmt.Println("Database Error:", err)
