@@ -9,18 +9,26 @@ import (
 	"net/http"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/golang-jwt/jwt/v4"
 )
 
 type cust struct {
-	CUST_NAME string `json:"cust_name"`
-	CUST_MAIL string `json:"cust_mail"`
-	CUST_ADDR string `json:"cust_addr"`
-	CUST_PHN  int64  `json:"cust_phn"`
+	CUST_NAME    string    `json:"cust_name"`
+	CUST_MAIL    string    `json:"cust_mail"`
+	CUST_ADDR    string    `json:"cust_addr"`
+	CUST_PHN     int64     `json:"cust_phn"`
+	Password     string    `json:"password,omitempty"`
+	PasswordHash string    `json:"password_hash,omitempty"`
+	CreatedBy    time.Time `json:"created_by,omitempty"`
 }
 
-const internalServerError = "Internal server error"
+const (
+	internalServerError = "Internal server error"
+	passwordLength      = 8
+)
 
 func generateRandomKey() ([]byte, error) {
 	key := make([]byte, 32)
@@ -44,7 +52,9 @@ func main() {
 		cust_name VARCHAR(50),
 		cust_mail VARCHAR(100),
 		cust_addr VARCHAR(200), 
-		cust_phn BIGINT
+		cust_phn BIGINT,
+		password_hash VARCHAR(255),
+		created_by DATETIME
 	);`
 
 	_, err = db.Exec(createTable)
@@ -78,8 +88,17 @@ func registerHandler(w http.ResponseWriter, r *http.Request, db *sql.DB, signing
 		return
 	}
 
-	insertQuery := `INSERT INTO CUSTOMER (cust_name, cust_mail, cust_addr, cust_phn) VALUES (?, ?, ?,?);`
-	result, err := db.Exec(insertQuery, c.CUST_NAME, c.CUST_MAIL, c.CUST_ADDR, c.CUST_PHN)
+	hashedPassword, err := generatePasswordHash(c.Password)
+	if err != nil {
+		http.Error(w, "Internal server Error", http.StatusInternalServerError)
+	}
+	c.PasswordHash = hashedPassword
+
+	currentDate := time.Now().Truncate(24 * time.Hour)
+	c.CreatedBy = currentDate
+
+	insertQuery := `INSERT INTO CUSTOMER (cust_name, cust_mail, cust_addr, cust_phn,password_hash,created_by) VALUES (?, ?, ?, ?, ?, ?);`
+	result, err := db.Exec(insertQuery, c.CUST_NAME, c.CUST_MAIL, c.CUST_ADDR, c.CUST_PHN, c.PasswordHash, c.CreatedBy)
 	if err != nil {
 		http.Error(w, internalServerError, http.StatusInternalServerError)
 		fmt.Println("Database Error:", err)
@@ -185,4 +204,13 @@ func getCustomerInfoFromToken(token *jwt.Token) (string, string, string, int64, 
 
 	custPhn := int64(custPhnFloat)
 	return custName, custMail, custAddr, int64(custPhn), nil
+}
+
+func generatePasswordHash(password string) (string, error) {
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(hashedPassword), nil
 }
