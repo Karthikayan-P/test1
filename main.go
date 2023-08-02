@@ -212,6 +212,40 @@ func generatePasswordHash(password string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	return string(hashedPassword), nil
+}
+func validatePasswordHash(password, hashedPassword string) error {
+	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+	return err
+}
+func loginHandler(w http.ResponseWriter, r *http.Request, db *sql.DB, signingKey []byte) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var loginData struct {
+		CUST_MAIL string `json:"cust_mail"`
+		Password  string `json:"password"`
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&loginData)
+	if err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	var hashedPassword string
+	err = db.QueryRow("SELECT password_hash FROM CUSTOMER WHERE cust_mail = ?", loginData.CUST_MAIL).Scan(&hashedPassword)
+	if err != nil {
+		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+		return
+	}
+
+	err = validatePasswordHash(loginData.Password, hashedPassword)
+	if err != nil {
+		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+		return
+	}
 }
