@@ -23,6 +23,7 @@ type cust struct {
 	Password     string    `json:"password,omitempty"`
 	PasswordHash string    `json:"password_hash,omitempty"`
 	CreatedBy    time.Time `json:"created_by,omitempty"`
+	Active       int       `json:"active,omitempty"`
 }
 
 const (
@@ -54,7 +55,8 @@ func main() {
 		cust_addr VARCHAR(200), 
 		cust_phn BIGINT,
 		password_hash VARCHAR(255),
-		created_by DATETIME
+		created_by DATETIME,
+		active INT DEFAULT 1
 	);`
 
 	_, err = db.Exec(createTable)
@@ -73,6 +75,10 @@ func main() {
 
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		loginHandler(w, r, db, signingKey)
+	})
+
+	http.HandleFunc("/delete", func(w http.ResponseWriter, r *http.Request) {
+		deleteHandler(w, r, db)
 	})
 
 	fmt.Println("Server started at http://localhost:8080")
@@ -95,15 +101,17 @@ func registerHandler(w http.ResponseWriter, r *http.Request, db *sql.DB, signing
 
 	hashedPassword, err := generatePasswordHash(c.Password)
 	if err != nil {
-		http.Error(w, "Internal server Error", http.StatusInternalServerError)
+		http.Error(w, internalServerError, http.StatusInternalServerError)
 	}
 	c.PasswordHash = hashedPassword
 
 	currentDate := time.Now().Truncate(24 * time.Hour)
 	c.CreatedBy = currentDate
 
-	insertQuery := `INSERT INTO CUSTOMER (cust_name, cust_mail, cust_addr, cust_phn,password_hash,created_by) VALUES (?, ?, ?, ?, ?, ?);`
-	result, err := db.Exec(insertQuery, c.CUST_NAME, c.CUST_MAIL, c.CUST_ADDR, c.CUST_PHN, c.PasswordHash, c.CreatedBy)
+	c.Active = 1
+
+	insertQuery := `INSERT INTO CUSTOMER (cust_name, cust_mail, cust_addr, cust_phn,password_hash,created_by,active) VALUES (?, ?, ?, ?, ?, ?, ?);`
+	result, err := db.Exec(insertQuery, c.CUST_NAME, c.CUST_MAIL, c.CUST_ADDR, c.CUST_PHN, c.PasswordHash, c.CreatedBy, c.Active)
 	if err != nil {
 		http.Error(w, internalServerError, http.StatusInternalServerError)
 		fmt.Println("Database Error:", err)
@@ -254,4 +262,52 @@ func loginHandler(w http.ResponseWriter, r *http.Request, db *sql.DB, signingKey
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(loginData)
+}
+
+func deleteHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var deleteData struct {
+		CUST_MAIL string `json:"cust_mail"`
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&deleteData)
+	if err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	updateQuery := `UPDATE CUSTOMER SET active = 0 WHERE cust_mail = ?;`
+	result, err := db.Exec(updateQuery, deleteData.CUST_MAIL)
+	if err != nil {
+		http.Error(w, internalServerError, http.StatusInternalServerError)
+		fmt.Println("Database Error:", err)
+		return
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		http.Error(w, internalServerError, http.StatusInternalServerError)
+		fmt.Println("RowsAffected Error:", err)
+		return
+	}
+
+	if rowsAffected == 0 {
+		http.Error(w, "Customer not found", http.StatusNotFound)
+		fmt.Println("No rows were affected")
+		return
+	}
+
+	response := map[string]string{
+		"message": "Customer deleted successfully!",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
