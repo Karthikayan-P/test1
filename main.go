@@ -71,11 +71,16 @@ func main() {
 		registerHandler(w, r, db, signingKey)
 	})
 
+	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		loginHandler(w, r, db, signingKey)
+	})
+
 	fmt.Println("Server started at http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 func registerHandler(w http.ResponseWriter, r *http.Request, db *sql.DB, signingKey []byte) {
+	log.Println("Received registration request.")
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -220,6 +225,7 @@ func validatePasswordHash(password, hashedPassword string) error {
 	return err
 }
 func loginHandler(w http.ResponseWriter, r *http.Request, db *sql.DB, signingKey []byte) {
+	log.Println("Received login request.")
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
